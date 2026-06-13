@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
-<title>Extrator Petropolis</title>
+<title>Extrator NF-e Petrópolis</title>
 
 <style>
 body {
@@ -34,11 +34,34 @@ button {
     cursor: pointer;
 }
 
+.toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: #333;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 5px;
+    opacity: 0;
+    transition: 0.3s;
+}
+
+.toast.show {
+    opacity: 1;
+}
+
 .resumo {
     background: #d1ecf1;
-    padding: 15px;
+    padding: 12px;
     margin-top: 20px;
     font-weight: bold;
+}
+
+.pedido {
+    background: #fff3cd;
+    padding: 6px;
+    margin-top: 5px;
+    border-radius: 5px;
 }
 </style>
 </head>
@@ -48,13 +71,16 @@ button {
 <h2>📊 Extrator NF-e Grupo Petrópolis</h2>
 
 <div class="area" id="drop">
-Arraste ou clique para importar
+Arraste ou clique para importar PDFs
 </div>
 
 <input type="file" id="input" multiple accept="application/pdf" hidden>
 
 <div id="saida"></div>
 
+<div id="toast" class="toast"></div>
+
+<!-- ✅ SCRIPT CERTO -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 
 <script>
@@ -64,84 +90,93 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 const drop = document.getElementById("drop");
 const input = document.getElementById("input");
 const saida = document.getElementById("saida");
+const toast = document.getElementById("toast");
 
 let listaNotas = [];
 
-// ===== COPIAR TEXTO =====
-function copiarTexto(valor) {
+// ===== TOAST =====
+function toastMsg(msg){
+    toast.innerText = msg;
+    toast.classList.add("show");
+    setTimeout(()=>toast.classList.remove("show"),1000);
+}
+
+// ===== COPIAR =====
+function copiar(valor,nome){
     navigator.clipboard.writeText(valor);
+    toastMsg(nome+" copiado");
+}
+
+// ===== RESET =====
+function resetar(){
+    listaNotas=[];
+    saida.innerHTML="";
 }
 
 // ===== INTERAÇÃO =====
-drop.onclick = () => input.click();
+drop.onclick = ()=>input.click();
 
-drop.ondragover = e => e.preventDefault();
+drop.ondragover = e=>e.preventDefault();
 
-drop.ondrop = e => {
+drop.ondrop = e=>{
     e.preventDefault();
-    listaNotas = [];
-    saida.innerHTML = "";
+    resetar();
     processar(e.dataTransfer.files);
 };
 
-input.onchange = () => {
-    listaNotas = [];
-    saida.innerHTML = "";
+input.onchange = ()=>{
+    resetar();
     processar(input.files);
 };
 
 // ===== PROCESSAR =====
-async function processar(files) {
+async function processar(files){
 
-    for (let file of files) {
+    for(let file of files){
 
-        if (file.type !== "application/pdf") continue;
+        if(file.type !== "application/pdf") continue;
 
-        try {
+        try{
 
             const buffer = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({data: buffer}).promise;
+            const pdf = await pdfjsLib.getDocument({data:buffer}).promise;
 
             let texto = "";
 
-            for (let i = 1; i <= Math.min(pdf.numPages, 2); i++) {
-                let page = await pdf.getPage(i);
-                let content = await page.getTextContent();
-                texto += content.items.map(i => i.str).join(" ");
+            for(let i=1;i<=Math.min(pdf.numPages,2);i++){
+                let p = await pdf.getPage(i);
+                let c = await p.getTextContent();
+                texto += c.items.map(i=>i.str).join(" ");
             }
 
-            texto = texto.replace(/\s+/g, " ").toUpperCase();
+            texto = texto.replace(/\s+/g," ").toUpperCase();
 
-            // 🚫 IGNORA BOLETO
-            if (texto.includes("BANCO DO BRASIL")) continue;
+            // ignorar boleto
+            if(texto.includes("BANCO DO BRASIL")) continue;
 
-            // 🚚 PEDÁGIO
-            if (texto.includes("PEDÁGIO")) {
-                extrairPedagio(texto, file.name);
+            // pedágio
+            if(texto.includes("PEDÁGIO")){
+                extrairPedagio(texto,file.name);
                 continue;
             }
 
-            // 📄 NF-e
-            extrairPetropolis(texto, file.name);
+            // NF-e
+            extrairNFe(texto,file.name);
 
-        } catch {
-            console.log("Erro:", file.name);
+        }catch{
+            console.log("Erro:",file.name);
         }
     }
 
-    mostrarResumo();
+    resumoFinal();
 }
 
-// ===== EXTRAIR NF-e =====
-function extrairPetropolis(texto, nome) {
+// ===== NF-e =====
+function extrairNFe(texto,nome){
 
-    let numero =
-        texto.match(/Nº\s*(\d{6,})/)?.[1] ||
-        texto.match(/NF-E\s*(\d+)/)?.[1] ||
-        "ERRO";
+    let numero = texto.match(/Nº\s*(\d{6,})/)?.[1] || "ERRO";
 
-    // remover zeros à esquerda
-    if (numero !== "ERRO") {
+    if(numero !== "ERRO"){
         numero = String(parseInt(numero));
         listaNotas.push(numero);
     }
@@ -150,99 +185,87 @@ function extrairPetropolis(texto, nome) {
         texto.split("DESTINATÁRIO")[0]
         .match(/CNPJ\s*([\d\.\/\-]+)/)?.[1];
 
-    remetente = remetente ? remetente.replace(/\D/g, "") : "ERRO";
+    remetente = remetente ? remetente.replace(/\D/g,"") : "ERRO";
 
     let destinatario =
         texto.match(/DESTINAT[ÁA]RIO.*?CNPJ\/CPF\s*([\d\.\/\-]+)/)?.[1];
 
-    destinatario = destinatario ? destinatario.replace(/\D/g, "") : "ERRO";
+    destinatario = destinatario ? destinatario.replace(/\D/g,"") : "ERRO";
 
     let frete = texto.match(/FRETE POR CONTA\s*(\d-[A-Z]+)/)?.[1] || "ERRO";
 
-    let chave = texto.match(/CHAVE DE ACESSO\s*([\d\s]+)/)?.[1];
-    chave = chave ? chave.replace(/\D/g, "") : "ERRO";
+    let chaveMatch = texto.match(/CHAVE DE ACESSO\s*([\d\s]+)/);
+    let chave = chaveMatch ? chaveMatch[1].replace(/\D/g,"") : "ERRO";
 
-    let valor = texto.match(/V\.TOTAL NOTA\s*([\d\.,]+)/)?.[1] || "ERRO";
+    // ✅ VALOR ROBUSTO
+    let valorMatch = texto.match(/V\.TOTAL NOTA[^0-9]*([\d\.,]+)/);
+    let valor = valorMatch ? valorMatch[1] : "ERRO";
 
-    let peso = texto.match(/PESO BRUTO\s*([\d\.,]+)/)?.[1] || "ERRO";
+    // ✅ PESO CORRIGIDO (FINAL)
+    let pesoMatch = texto.match(/PESO BRUTO[^0-9]*([\d\.,]+)/);
+    let peso = pesoMatch ? pesoMatch[1] : "ERRO";
 
-    let pedido = "";
-    if (texto.includes("PALETE")) {
-        pedido = texto.match(/PEDIDO:\s*(\d+)/)?.[1] || "NÃO ENCONTRADO";
+    let pedido = null;
+
+    if(texto.includes("PALETE")){
+        pedido = texto.match(/PEDIDO:\s*(\d+)/)?.[1] || null;
     }
 
     mostrar(`
-        📄 <b>${nome}</b><br>
+    📄 <b>${nome}</b><br>
 
-        Número: ${numero}
-        <button onclick="copiarTexto('${numero}')">📋</button><br>
+    Número: ${numero} <button onclick="copiar('${numero}','Número')">📋</button><br>
+    Remetente: ${remetente} <button onclick="copiar('${remetente}','Remetente')">📋</button><br>
+    Destinatário: ${destinatario} <button onclick="copiar('${destinatario}','Destinatário')">📋</button><br>
+    Frete: ${frete} <button onclick="copiar('${frete}','Frete')">📋</button><br>
+    Chave: ${chave} <button onclick="copiar('${chave}','Chave')">📋</button><br>
+    Valor: ${valor} <button onclick="copiar('${valor}','Valor')">📋</button><br>
+    Peso: ${peso} <button onclick="copiar('${peso}','Peso')">📋</button><br>
 
-        Remetente: ${remetente}
-        <button onclicktinatario}
-        <button onclick="copiarTexto('${destinatario}')">📋</button><br>
-
-        Frete: ${frete}
-        <button onclick="copiarTexto('${frete}')">📋</button><br>
-
-        Chave: ${chave}
-        <button onclick="copiarTexto('${chave}')">📋</button><br>
-
-        Valor: ${valor}
-        <button onclick="copiarTexto('${valor}')">📋</button><br>
-
-        Peso: ${peso}
-        <button onclick="copiarTexto('${peso}')">📋</button><br>
-
-        Pedido: ${pedido}
-        <button onclick="copiarTexto('${pedido}')">📋</button>
+    ${pedido ? `
+    <div class="pedido">
+        Pedido: ${pedido} <button onclick="copiar('${pedido}','Pedido')">📋</button>
+    </div>` : ""}
     `);
 }
 
-// ===== EXTRAIR PEDÁGIO =====
-function extrairPedagio(texto, nome) {
+// ===== PEDÁGIO =====
+function extrairPedagio(texto,nome){
 
     let cnpj = texto.match(/CLIENTE:\s*([\d\.\/\-]+)/)?.[1];
-    cnpj = cnpj ? cnpj.replace(/\D/g, "") : "ERRO";
+    cnpj = cnpj ? cnpj.replace(/\D/g,"") : "ERRO";
 
     let viagem = texto.match(/VIAGEM:\s*(\d+)/)?.[1] || "ERRO";
 
     let total = texto.match(/TOTAL:\s*([\d,]+)/)?.[1] || "ERRO";
 
     mostrar(`
-        🚚 <b>${nome}</b><br>
+    🚚 <b>${nome}</b><br>
 
-        Cliente: ${cnpj}
-        <button onclick="copiarTexto('${cnpj}')">📋</button><br>
-
-        Viagem: ${viagem}
-        <button onclick="copiarTexto('${viagem}')">📋</button><br>
-
-        Total: ${total}
-        <button onclick="copiarTexto('${total}')">📋</button>
+    Cliente: ${cnpj} <button onclick="copiar('${cnpj}','Cliente')">📋</button><br>
+    Viagem: ${viagem} <button onclick="copiar('${viagem}','Viagem')">📋</button><br>
+    Total: ${total} <button onclick="copiar('${total}','Total')">📋</button>
     `);
 }
 
-// ===== MOSTRAR =====
-function mostrar(html) {
-
+// ===== UI =====
+function mostrar(html){
     let div = document.createElement("div");
     div.className = "item";
     div.innerHTML = html;
-
     saida.appendChild(div);
 }
 
-// ===== RESUMO FINAL =====
-function mostrarResumo() {
+// ===== RESUMO =====
+function resumoFinal(){
 
-    if (listaNotas.length === 0) return;
+    if(listaNotas.length===0) return;
 
-    let unicas = [...new Set(listaNotas)].sort((a,b)=>a-b);
+    let notas = [...new Set(listaNotas)].sort((a,b)=>a-b);
 
     let div = document.createElement("div");
     div.className = "resumo";
-
-    div.innerText = "Notas: " + unicas.join(" / ");
+    div.innerText = "Notas: " + notas.join(" / ");
 
     saida.appendChild(div);
 }
