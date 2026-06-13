@@ -24,9 +24,14 @@ body {
 
 .item {
     background: white;
-    padding: 10px;
+    padding: 12px;
     margin-bottom: 10px;
     border-left: 5px solid #007bff;
+}
+
+button {
+    margin-left: 5px;
+    cursor: pointer;
 }
 
 .resumo {
@@ -62,7 +67,12 @@ const saida = document.getElementById("saida");
 
 let listaNotas = [];
 
-// interação
+// ===== COPIAR TEXTO =====
+function copiarTexto(valor) {
+    navigator.clipboard.writeText(valor);
+}
+
+// ===== INTERAÇÃO =====
 drop.onclick = () => input.click();
 
 drop.ondragover = e => e.preventDefault();
@@ -80,8 +90,7 @@ input.onchange = () => {
     processar(input.files);
 };
 
-
-// ================= PROCESSAR =================
+// ===== PROCESSAR =====
 async function processar(files) {
 
     for (let file of files) {
@@ -103,7 +112,7 @@ async function processar(files) {
 
             texto = texto.replace(/\s+/g, " ").toUpperCase();
 
-            // 🚫 IGNORAR BOLETO
+            // 🚫 IGNORA BOLETO
             if (texto.includes("BANCO DO BRASIL")) continue;
 
             // 🚚 PEDÁGIO
@@ -123,48 +132,40 @@ async function processar(files) {
     mostrarResumo();
 }
 
-
-// ================= NF-e =================
+// ===== EXTRAIR NF-e =====
 function extrairPetropolis(texto, nome) {
 
-    // ✅ NUMERO DA NOTA
     let numero =
         texto.match(/Nº\s*(\d{6,})/)?.[1] ||
         texto.match(/NF-E\s*(\d+)/)?.[1] ||
         "ERRO";
 
+    // remover zeros à esquerda
     if (numero !== "ERRO") {
-    let numeroLimpo = String(parseInt(numero)); // remove zeros
-    listaNotas.push(numeroLimpo);
-}
+        numero = String(parseInt(numero));
+        listaNotas.push(numero);
+    }
 
-    // ✅ REMETENTE
     let remetente =
         texto.split("DESTINATÁRIO")[0]
         .match(/CNPJ\s*([\d\.\/\-]+)/)?.[1];
 
     remetente = remetente ? remetente.replace(/\D/g, "") : "ERRO";
 
-    // ✅ DESTINATÁRIO
     let destinatario =
         texto.match(/DESTINAT[ÁA]RIO.*?CNPJ\/CPF\s*([\d\.\/\-]+)/)?.[1];
 
     destinatario = destinatario ? destinatario.replace(/\D/g, "") : "ERRO";
 
-    // ✅ FRETE
     let frete = texto.match(/FRETE POR CONTA\s*(\d-[A-Z]+)/)?.[1] || "ERRO";
 
-    // ✅ CHAVE
     let chave = texto.match(/CHAVE DE ACESSO\s*([\d\s]+)/)?.[1];
     chave = chave ? chave.replace(/\D/g, "") : "ERRO";
 
-    // ✅ VALOR CORRETO
     let valor = texto.match(/V\.TOTAL NOTA\s*([\d\.,]+)/)?.[1] || "ERRO";
 
-    // ✅ PESO CORRETO
     let peso = texto.match(/PESO BRUTO\s*([\d\.,]+)/)?.[1] || "ERRO";
 
-    // ✅ PEDIDO (PALLETE)
     let pedido = "";
     if (texto.includes("PALETE")) {
         pedido = texto.match(/PEDIDO:\s*(\d+)/)?.[1] || "NÃO ENCONTRADO";
@@ -172,19 +173,32 @@ function extrairPetropolis(texto, nome) {
 
     mostrar(`
         📄 <b>${nome}</b><br>
-        Número: ${numero}<br>
-        Remetente: ${remetente}<br>
-        Destinatário: ${destinatario}<br>
-        Frete: ${frete}<br>
-        Chave: ${chave}<br>
-        Valor: ${valor}<br>
-        Peso Bruto: ${peso}<br>
+
+        Número: ${numero}
+        <button onclick="copiarTexto('${numero}')">📋</button><br>
+
+        Remetente: ${remetente}
+        <button onclicktinatario}
+        <button onclick="copiarTexto('${destinatario}')">📋</button><br>
+
+        Frete: ${frete}
+        <button onclick="copiarTexto('${frete}')">📋</button><br>
+
+        Chave: ${chave}
+        <button onclick="copiarTexto('${chave}')">📋</button><br>
+
+        Valor: ${valor}
+        <button onclick="copiarTexto('${valor}')">📋</button><br>
+
+        Peso: ${peso}
+        <button onclick="copiarTexto('${peso}')">📋</button><br>
+
         Pedido: ${pedido}
+        <button onclick="copiarTexto('${pedido}')">📋</button>
     `);
 }
 
-
-// ================= PEDÁGIO =================
+// ===== EXTRAIR PEDÁGIO =====
 function extrairPedagio(texto, nome) {
 
     let cnpj = texto.match(/CLIENTE:\s*([\d\.\/\-]+)/)?.[1];
@@ -196,14 +210,19 @@ function extrairPedagio(texto, nome) {
 
     mostrar(`
         🚚 <b>${nome}</b><br>
-        Cliente: ${cnpj}<br>
-        Viagem: ${viagem}<br>
+
+        Cliente: ${cnpj}
+        <button onclick="copiarTexto('${cnpj}')">📋</button><br>
+
+        Viagem: ${viagem}
+        <button onclick="copiarTexto('${viagem}')">📋</button><br>
+
         Total: ${total}
+        <button onclick="copiarTexto('${total}')">📋</button>
     `);
 }
 
-
-// ================= MOSTRAR =================
+// ===== MOSTRAR =====
 function mostrar(html) {
 
     let div = document.createElement("div");
@@ -213,13 +232,12 @@ function mostrar(html) {
     saida.appendChild(div);
 }
 
-
-// ================= RESUMO FINAL =================
+// ===== RESUMO FINAL =====
 function mostrarResumo() {
 
     if (listaNotas.length === 0) return;
 
-    let unicas = [...new Set(listaNotas)].sort();
+    let unicas = [...new Set(listaNotas)].sort((a,b)=>a-b);
 
     let div = document.createElement("div");
     div.className = "resumo";
