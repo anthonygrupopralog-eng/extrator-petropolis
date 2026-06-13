@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Extrator Petropolis</title>
+
+<style>
+body {
+    font-family: Arial;
+    padding: 20px;
+    background: #f4f6f9;
+}
+
+.area {
+    border: 2px dashed #777;
+    padding: 40px;
+    text-align: center;
+    cursor: pointer;
+    background: #fff;
+    margin-bottom: 20px;
+}
+
+.area:hover { background: #eee; }
+
+.item {
+    background: white;
+    padding: 10px;
+    margin-bottom: 10px;
+    border-left: 5px solid #007bff;
+}
+
+.resumo {
+    background: #d1ecf1;
+    padding: 15px;
+    margin-top: 20px;
+    font-weight: bold;
+}
+</style>
+</head>
+
+<body>
+
+<h2>📊 Extrator NF-e Grupo Petrópolis</h2>
+
+<div class="area" id="drop">
+Arraste ou clique para importar
+</div>
+
+<input type="file" id="input" multiple accept="application/pdf" hidden>
+
+<div id="saida"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+
+const drop = document.getElementById("drop");
+const input = document.getElementById("input");
+const saida = document.getElementById("saida");
+
+let listaNotas = [];
+
+// interação
+drop.onclick = () => input.click();
+
+drop.ondragover = e => e.preventDefault();
+
+drop.ondrop = e => {
+    e.preventDefault();
+    listaNotas = [];
+    saida.innerHTML = "";
+    processar(e.dataTransfer.files);
+};
+
+input.onchange = () => {
+    listaNotas = [];
+    saida.innerHTML = "";
+    processar(input.files);
+};
+
+
+// ================= PROCESSAR =================
+async function processar(files) {
+
+    for (let file of files) {
+
+        if (file.type !== "application/pdf") continue;
+
+        try {
+
+            const buffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({data: buffer}).promise;
+
+            let texto = "";
+
+            for (let i = 1; i <= Math.min(pdf.numPages, 2); i++) {
+                let page = await pdf.getPage(i);
+                let content = await page.getTextContent();
+                texto += content.items.map(i => i.str).join(" ");
+            }
+
+            texto = texto.replace(/\s+/g, " ").toUpperCase();
+
+            // 🚫 IGNORAR BOLETO
+            if (texto.includes("BANCO DO BRASIL")) continue;
+
+            // 🚚 PEDÁGIO
+            if (texto.includes("PEDÁGIO")) {
+                extrairPedagio(texto, file.name);
+                continue;
+            }
+
+            // 📄 NF-e
+            extrairPetropolis(texto, file.name);
+
+        } catch {
+            console.log("Erro:", file.name);
+        }
+    }
+
+    mostrarResumo();
+}
+
+
+// ================= NF-e =================
+function extrairPetropolis(texto, nome) {
+
+    // ✅ NUMERO DA NOTA
+    let numero =
+        texto.match(/Nº\s*(\d{6,})/)?.[1] ||
+        texto.match(/NF-E\s*(\d+)/)?.[1] ||
+        "ERRO";
+
+    if (numero !== "ERRO") {
+    let numeroLimpo = String(parseInt(numero)); // remove zeros
+    listaNotas.push(numeroLimpo);
+}
+
+    // ✅ REMETENTE
+    let remetente =
+        texto.split("DESTINATÁRIO")[0]
+        .match(/CNPJ\s*([\d\.\/\-]+)/)?.[1];
+
+    remetente = remetente ? remetente.replace(/\D/g, "") : "ERRO";
+
+    // ✅ DESTINATÁRIO
+    let destinatario =
+        texto.match(/DESTINAT[ÁA]RIO.*?CNPJ\/CPF\s*([\d\.\/\-]+)/)?.[1];
+
+    destinatario = destinatario ? destinatario.replace(/\D/g, "") : "ERRO";
+
+    // ✅ FRETE
+    let frete = texto.match(/FRETE POR CONTA\s*(\d-[A-Z]+)/)?.[1] || "ERRO";
+
+    // ✅ CHAVE
+    let chave = texto.match(/CHAVE DE ACESSO\s*([\d\s]+)/)?.[1];
+    chave = chave ? chave.replace(/\D/g, "") : "ERRO";
+
+    // ✅ VALOR CORRETO
+    let valor = texto.match(/V\.TOTAL NOTA\s*([\d\.,]+)/)?.[1] || "ERRO";
+
+    // ✅ PESO CORRETO
+    let peso = texto.match(/PESO BRUTO\s*([\d\.,]+)/)?.[1] || "ERRO";
+
+    // ✅ PEDIDO (PALLETE)
+    let pedido = "";
+    if (texto.includes("PALETE")) {
+        pedido = texto.match(/PEDIDO:\s*(\d+)/)?.[1] || "NÃO ENCONTRADO";
+    }
+
+    mostrar(`
+        📄 <b>${nome}</b><br>
+        Número: ${numero}<br>
+        Remetente: ${remetente}<br>
+        Destinatário: ${destinatario}<br>
+        Frete: ${frete}<br>
+        Chave: ${chave}<br>
+        Valor: ${valor}<br>
+        Peso Bruto: ${peso}<br>
+        Pedido: ${pedido}
+    `);
+}
+
+
+// ================= PEDÁGIO =================
+function extrairPedagio(texto, nome) {
+
+    let cnpj = texto.match(/CLIENTE:\s*([\d\.\/\-]+)/)?.[1];
+    cnpj = cnpj ? cnpj.replace(/\D/g, "") : "ERRO";
+
+    let viagem = texto.match(/VIAGEM:\s*(\d+)/)?.[1] || "ERRO";
+
+    let total = texto.match(/TOTAL:\s*([\d,]+)/)?.[1] || "ERRO";
+
+    mostrar(`
+        🚚 <b>${nome}</b><br>
+        Cliente: ${cnpj}<br>
+        Viagem: ${viagem}<br>
+        Total: ${total}
+    `);
+}
+
+
+// ================= MOSTRAR =================
+function mostrar(html) {
+
+    let div = document.createElement("div");
+    div.className = "item";
+    div.innerHTML = html;
+
+    saida.appendChild(div);
+}
+
+
+// ================= RESUMO FINAL =================
+function mostrarResumo() {
+
+    if (listaNotas.length === 0) return;
+
+    let unicas = [...new Set(listaNotas)].sort();
+
+    let div = document.createElement("div");
+    div.className = "resumo";
+
+    div.innerText = "Notas: " + unicas.join(" / ");
+
+    saida.appendChild(div);
+}
+</script>
+
+</body>
+</html>
